@@ -8,15 +8,252 @@ var HistoryMoves = [];
 var generator;
 var tmpFigure = undefined;//для превращения пешки
 
+
+
+var MyColor;
+var Castling=false;//флаг, показывающий, был ли тек. ход рокировкой (костыль для соответствия протоколу)
+//var socket = io.connect('http://192.168.20.115:9898');
+var socket = io.connect('http://localhost:9898');
+
+function MoveFromServer_Move(data){
+	NowMove=data.playerColor;
+	var _rs=data.from.y-1, _cs=SymbolToCoord(data.from.x),
+		_rt=data.to.y-1, _ct=SymbolToCoord(data.to.x);
+	var _target = $('div.board > div.square[data-row="'+_rt+'"][data-column="'+_ct+'"]')[0];
+	SelectedFigure = Matrix[_rs][_cs];
+	if(!(SelectedFigure==undefined) && CheckCorrectness(SelectedFigure,_target,Matrix)){
+		var newMove = {
+			figure: SelectedFigure,
+			rs: SelectedFigure.row,
+			cs: SelectedFigure.column,
+			rt: _rt,
+			ct: _ct
+		};
+		HistoryMoves[HistoryMoves.length] = newMove;
+		
+		Matrix[_rt][_ct]=SelectedFigure;
+		Matrix[SelectedFigure.row][SelectedFigure.column]=undefined;
+		SelectedFigure.row = _rt; SelectedFigure.column = _ct;
+		
+		ChangeMove();
+		RefreshBoard();
+		
+		//Мат
+		if(CheckMate(NowMove,Matrix)){
+			socket.emit('turn_mate');
+			return;
+		}
+		//Шах
+		if(CheckToTheKing(NowMove,Matrix)){
+			var str=(NowMove === 'white' ? 'Белым' : 'Чёрным');
+			str+=' объявлен шах.';
+			alert(str);	
+		}
+		//Пат
+		if(CheckStalemate(NowMove,Matrix)){
+			socket.emit('turn_draw');
+			return;
+		}
+		
+		SelectedFigure=undefined;	
+	}
+	else{
+		socket.emit('turnValidation_invalid');
+	}
+}
+
+function MoveFromServer_Castling(data){
+	//NowMove=data.playerColor;
+	var _rt=data.from.y-1, _ct=SymbolToCoord(data.from.x);
+	//Преобразуем х-координату целевой ладьи, полученную с сервера, в координату целевой клетки короля
+	if(_ct==7) _ct=6;
+	if(_ct==0) _ct=2;
+	
+	var _target = $('div.board > div.square[data-row="'+_rt+'"][data-column="'+_ct+'"]')[0];
+	SelectedFigure = FindKing(NowMove,Matrix);
+	if(!(SelectedFigure==undefined) && CheckCorrectness(SelectedFigure,_target,Matrix)){
+		var newMove = {
+			figure: SelectedFigure,
+			rs: SelectedFigure.row,
+			cs: SelectedFigure.column,
+			rt: _rt,
+			ct: _ct
+		};
+		HistoryMoves[HistoryMoves.length] = newMove;
+		
+		Matrix[_rt][_ct]=SelectedFigure;
+		Matrix[SelectedFigure.row][SelectedFigure.column]=undefined;
+		SelectedFigure.row = _rt; SelectedFigure.column = _ct;
+		
+		ChangeMove();
+		RefreshBoard();
+		
+		//Мат
+		if(CheckMate(NowMove,Matrix)){
+			socket.emit('turn_mate');
+			return;
+		}
+		//Шах
+		if(CheckToTheKing(NowMove,Matrix)){
+			var str=(NowMove === 'white' ? 'Белым' : 'Чёрным');
+			str+=' объявлен шах.';
+			alert(str);	
+		}
+		//Пат
+		if(CheckStalemate(NowMove,Matrix)){
+			socket.emit('turn_draw');
+			return;
+		}
+		
+		SelectedFigure=undefined;	
+	}
+	else{
+		socket.emit('turnValidation_invalid');
+	}
+}
+
+function MoveFromServer_Promotion(data){
+	//NowMove=data.playerColor;
+	var _rs=data.from.y-1, _cs=SymbolToCoord(data.from.x),
+		_rt=data.to.y-1, _ct=SymbolToCoord(data.to.x)
+	var _target = $('div.board > div.square[data-row="'+_rt+'"][data-column="'+_ct+'"]')[0];
+	SelectedFigure = Matrix[_rs][_cs];
+	if(!(SelectedFigure==undefined) && CheckCorrectness(SelectedFigure,_target,Matrix)){
+		var newMove = {
+			figure: SelectedFigure,
+			rs: SelectedFigure.row,
+			cs: SelectedFigure.column,
+			rt: _rt,
+			ct: _ct
+		};
+		HistoryMoves[HistoryMoves.length] = newMove;
+		
+		SelectedFigure = {ID: generator.getID(), Type: (data.newPiece == 'rook' ? 'castle' : data.newPiece), Color: data.playerColor, row: _rt, column: _ct};
+		Matrix[_rt][_ct]=SelectedFigure;
+		Matrix[_rs][_cs]=undefined;
+		
+		ChangeMove();
+		RefreshBoard();
+		
+		//Мат
+		if(CheckMate(NowMove,Matrix)){
+			socket.emit('turn_mate');
+			return;
+		}
+		//Шах
+		if(CheckToTheKing(NowMove,Matrix)){
+			var str=(NowMove === 'white' ? 'Белым' : 'Чёрным');
+			str+=' объявлен шах.';
+			alert(str);	
+		}
+		//Пат
+		if(CheckStalemate(NowMove,Matrix)){
+			socket.emit('turn_draw');
+			return;
+		}
+		
+		SelectedFigure=undefined;	
+	}
+	else{
+		socket.emit('turnValidation_invalid');
+	}
+}
+
+socket.on('game_found', function(data) {
+	alert('Игра найдена! Ваш цвет: '+(data.color === 'white' ? 'белый.' : 'чёрный.'));
+	MyColor=data.color;
+	Document_state3();
+});
+socket.on('player_move', MoveFromServer_Move);
+socket.on('player_castling', MoveFromServer_Castling);
+socket.on('player_promotion', MoveFromServer_Promotion);
+socket.on('player_mate', function() {
+	if(CheckMate(NowMove,Matrix)){
+		socket.emit('turnValidation_mate');
+	}
+	else{
+		socket.emit('turnValidation_invalid');
+	}
+});
+socket.on('player_draw', function() {
+	if(CheckStalemate(NowMove,Matrix)){
+		socket.emit('turnValidation_draw');
+	}
+	else{
+		socket.emit('turnValidation_invalid');
+	}
+});
+socket.on('game_end', function(data) {
+	var log='Игра окончена! Причина: ';
+	if(data.msg=='leave'){
+		log+='один из игроков покинул комнату';
+	}
+	if(data.msg=='mate'){
+		log+='поставлен мат';
+	}
+	if(data.msg=='draw'){
+		log+='патовая ситуация';
+	}
+	if(data.msg=='invalid turn'){
+		log+='некорректный ход '+(data.winnerColor === 'white' ? 'чёрных' : 'белых');
+	}
+	log+='; победитель: ';
+	if(data.winnerColor=='white'){
+		log+='белые.';
+	}
+	if(data.winnerColor=='black'){
+		log+='чёрные.';
+	}
+	if(data.winnerColor==null){
+		log+='не определён.';
+	}
+	alert(log);
+	$('div.board > div.square').off('click');
+});
+socket.on('roomsList', function(rooms) {
+	$('body').empty();
+	$('body').html('<table id="RoomsTable" width="450" border="1" cellspacing="0" cellpadding="5">'+
+	'<tr><th scope="col">ID комнаты</th><th scope="col">Кол-во людей</th><th scope="col">&nbsp;</th></tr></table>'+
+	'<div class="RoomsListUnsubscribeButton" ' +
+	'style="width: 90px; height: 22px; '+
+	'float: top; cursor: pointer; border: 1px solid black"><b>Отписаться</b></div>\n');
+	for(var i=0; i<rooms.length; i++){
+		$('table#RoomsTable').html($('table#RoomsTable').html()+
+		' <tr><td>'+rooms[i].roomID+'</td>'+
+		' <td>'+rooms[i].length+'</td>'+
+		' <td><div class="RoomEnterButton"'+
+		' style = "float: top; cursor: pointer; border: 1px solid black"'+
+		' data-roomID = "'+rooms[i].roomID+'">Смотреть</div></td></tr> '
+		);
+	}
+	$('div.RoomEnterButton').click(RoomEnterButton_click);
+	$('div.RoomsListUnsubscribeButton').click(RoomsListUnsubscribeButton_click);
+});
+socket.on('game_logs', function(data) {
+	for(var i=0; i<data.length; i++){
+		if(data[i].moveType == 'move'){
+			MoveFromServer_Move(data[i].moveData);
+		}
+		if(data[i].moveType == 'castling'){
+			MoveFromServer_Castling(data[i].moveData);
+		}
+		if(data[i].moveType == 'promotion'){
+			MoveFromServer_Promotion(data[i].moveData);
+		}
+	}
+});
+
+//Генератор ID для фигур
 function IDGenerator(){
 	this.num = 1;
 	this.getID = function(){
 		return this.num++;
 	}
-
 } 
 
+//Для копирования матрицы
 Object.prototype.clone = function() {
+	if(this.nodeName=="DIV") return this;
 	var newObj = (this instanceof Array) ? [] : {};
 	for (i in this) {
 		if (i == 'clone')
@@ -33,11 +270,50 @@ Object.prototype.clone = function() {
 //Вызывается при загрузке страницы
 function Main(){
 	generator = new IDGenerator();
+	Document_state1();
+}
+
+//Приведение окна к состоянию "Перед поиском игры"
+function Document_state1(){
+	$('body').empty();
+	document.write('<div class="GameFindButton" ' +
+		'style="width: 90px; height: 22px; '+
+		'float: top; cursor: pointer; border: 1px solid black"><b>Найти игру</b></div>\n'+
+		'<div class="RoomsListButton" ' +
+		'style="width: 300px; height: 22px; '+
+		'float: top; cursor: pointer; border: 1px solid black"><b>Подписаться на просмотр списка комнат</b></div>\n');
+	$('div.GameFindButton').click(GameFindButton_click);
+	$('div.RoomsListButton').click(RoomsListButton_click);
+}
+
+//Приведение окна к состоянию "В процессе поиска игры"
+function Document_state2(){
+	$('body').empty();
+	document.write('Ведется поиск...');
+	document.write('<div class="StopFindingButton" ' +
+		'style="width: 140px; height: 22px; '+
+		'float: top; cursor: pointer; border: 1px solid black"><b>Остановить поиск</b></div>\n');
+	$('div.StopFindingButton').click(StopFindingButton_click);
+}
+
+//Приведение окна к состоянию "Идет игра"
+function Document_state3(){
+	$('body').empty();
+	document.write('<div id="wrap"></div> <div id="selectFigureWindow"></div>');
+	var sfw = $('div#selectFigureWindow'), w=$('div#wrap');
+	w.css({"display": "none","opacity": "0.8","position": "fixed","left": "0","right": "0","top": "0","bottom": "0","padding": "16px","background-color": "rgba(1, 1, 1, 0.725)",
+		"z-index": "100","overflow": "auto"})
+	sfw.css({"width": "450px","height": "100px","margin": "50px auto","display": "none","background": "#fff","z-index": "200","position": "fixed","left": "0","right": "0",
+	"top": "0","bottom": "0","padding": "16px"});
 	document.write(GenerateBoard());
 	GenerateFigures();
 	RefreshBoard();
 	$('div.board > div.square').click(ClickOnSquare);
-	document.write('<div id="wrap"></div> <div id="selectFigureWindow"></div>');
+	document.write('<div class="LeaveButton" ' +
+		'style="width: 140px; height: 22px; '+
+		'float: top; cursor: pointer; border: 1px solid black"><b>Покинуть игру</b></div>\n');
+	$('div.LeaveButton').click(LeaveButton_click);
+	document.write('<div></div>');
 }
 
 //Создание пустой матрицы
@@ -115,9 +391,10 @@ function RefreshBoard(){
 //Клик по клетке доски
 function ClickOnSquare(){
 	var r=parseInt(this.attributes['data-row'].value), c=parseInt(this.attributes['data-column'].value);
+	Castling=false;
 	
 	if((SelectedFigure === undefined)){
-		if((Matrix[r][c]===undefined) || !(Matrix[r][c].Color===NowMove)){
+		if((Matrix[r][c]===undefined) || !(Matrix[r][c].Color===NowMove) || !(Matrix[r][c].Color===MyColor)){
 			return;
 		}
 		SelectedFigure = Matrix[r][c];
@@ -135,6 +412,37 @@ function ClickOnSquare(){
 			};
 			HistoryMoves[HistoryMoves.length] = newMove;
 			
+			if(!(
+				(SelectedFigure.Type=='pawn' && SelectedFigure.Color=='white' && r==7) ||
+				(SelectedFigure.Type=='pawn' && SelectedFigure.Color=='black' && r==0)
+			)){
+				if(Castling){
+					//Преобразуем х-координату целевой клетки короля в координату целевой ладьи, которую надо послать на сервер
+					var castleX=c;
+					if(castleX==6) castleX = 7;
+					if(castleX==2) castleX = 0;
+					
+					socket.emit('turn_castling',{
+						from: {
+							x: CoordToSymbol(castleX),
+							y: r+1
+						}
+					});
+				}
+				else{
+					socket.emit('turn_move',{
+						from: {
+							x: CoordToSymbol(SelectedFigure.column),
+							y: SelectedFigure.row+1
+						},
+						to: {
+							x: CoordToSymbol(c),
+							y: r+1
+						}
+					});
+				}
+			}
+			
 			Matrix[r][c]=SelectedFigure;
 			Matrix[SelectedFigure.row][SelectedFigure.column]=undefined;
 			SelectedFigure.row = r; SelectedFigure.column = c;
@@ -145,10 +453,12 @@ function ClickOnSquare(){
 			){
 				tmpFigure=SelectedFigure;
 				RebuildSelectFigureWindow(SelectedFigure.Color);
+				$('div.board > div.square').off('click');
 				return;
 			}
 			ChangeMove();
 			RefreshBoard();
+			/*
 			//Мат
 			if(CheckMate(NowMove,Matrix)){
 				var str=(NowMove === 'white' ? 'Белым' : 'Чёрным');
@@ -171,6 +481,7 @@ function ClickOnSquare(){
 				GameOver(undefined);
 				return;
 			}
+			*/
 		}
 		else{
 			alert('Ход невозможен!');
@@ -426,6 +737,7 @@ function CheckCorrectness_King(king,target,Matrix){
 						Matrix[0][5]=Matrix[0][7];
 						Matrix[0][7]=undefined;
 						Matrix[0][5].column=5;
+						Castling=true;
 						return true;
 					}
 				}
@@ -441,6 +753,7 @@ function CheckCorrectness_King(king,target,Matrix){
 						Matrix[0][3]=Matrix[0][0];
 						Matrix[0][0]=undefined;
 						Matrix[0][3].column=3;
+						Castling=true;
 						return true;
 					}
 				}
@@ -461,8 +774,9 @@ function CheckCorrectness_King(king,target,Matrix){
 					if(ok){
 						Matrix[7][5]=Matrix[7][7];
 						Matrix[7][7]=undefined;
-						return true;
 						Matrix[7][5].column=5;
+						Castling=true;
+						return true;
 					}
 				}
 				if(ct==2 && !(Matrix[7][0]==undefined) && AllMoves(Matrix[7][0]).length==0){
@@ -477,6 +791,7 @@ function CheckCorrectness_King(king,target,Matrix){
 						Matrix[7][3]=Matrix[7][0];
 						Matrix[7][0]=undefined;
 						Matrix[7][3].column=3;
+						Castling=true;
 						return true;
 					}
 				}
@@ -693,10 +1008,22 @@ function ClickOnFigureInSelectFigureWindow(){
 	Matrix[figure.row][figure.column]=figure;
 	tmpFigure=undefined;
 	
+	socket.emit('turn_promotion',{
+		from: {
+			x: CoordToSymbol(HistoryMoves[HistoryMoves.length-1].cs),
+			y: HistoryMoves[HistoryMoves.length-1].rs+1
+		},
+		to: {
+			x: CoordToSymbol(figure.column),
+			y: figure.row+1
+		},
+		newPiece: (ftype == 'castle' ? 'rook' : ftype)
+	});
+	$('div.board > div.square').click(ClickOnSquare);
 	//Скопировано из ClickOnSquare, должно выполняться после замены пешки на фигуру
 	ChangeMove();
 	RefreshBoard();
-	//Мат
+	/*//Мат
 	if(CheckMate(NowMove)){
 		var str=(NowMove === 'white' ? 'Белым' : 'Чёрным');
 		str+=' объявлен мат.';
@@ -717,7 +1044,7 @@ function ClickOnFigureInSelectFigureWindow(){
 		alert(str);	
 		GameOver(undefined);
 		return;
-	}
+	}*/
 	SelectedFigure=undefined;
 }
 
@@ -729,7 +1056,11 @@ function ControlSelectFigureWindow(state){
 
 //Построение окна выбора фигуры, в которую превратится пешка
 function RebuildSelectFigureWindow(color){
-	var sfw = $('div#selectFigureWindow');
+	var sfw = $('div#selectFigureWindow');/*, w=$('div#wrap');
+	w.css({"display": "block","opacity": "0.8","position": "fixed","left": "0","right": "0","top": "0","bottom": "0","padding": "16px","background-color": "rgba(1, 1, 1, 0.725)",
+		"z-index": "100","overflow": "auto"})
+	sfw.css({"width": "450px","height": "100px","margin": "50px auto","display": "block","background": "#fff","z-index": "200","position": "fixed","left": "0","right": "0",
+	"top": "0","bottom": "0","padding": "16px"});*/
 	sfw.empty();
 	sfw.html('<b>Выберите фигуру, в которую превратится прошедшая пешка!</b>');
 	var fiTypes=['knight','bishop','castle','queen'];
@@ -742,6 +1073,50 @@ function RebuildSelectFigureWindow(color){
 	}	
 	$('div#selectFigureWindow > div.figure').click(ClickOnFigureInSelectFigureWindow);
 	ControlSelectFigureWindow('block');
+}
+
+//Преобразование А...Н в 0...7
+function SymbolToCoord(s){
+	return s.charCodeAt(0) - 65;
+}
+
+//Преобразование 0...7 в А...Н 
+function CoordToSymbol(c){
+	return String.fromCharCode(c + 65);
+}
+
+//Клик по кнопке "Найти игру"
+function GameFindButton_click(){
+	socket.emit('game_find');
+	Document_state2();
+}
+
+//Клик по кнопке "Подписаться на просмотр списка комнат"
+function RoomsListButton_click(){
+	socket.emit('roomsList_subscribe');
+}
+
+//Клик по кнопке "Остановить поиск"
+function StopFindingButton_click(){
+	socket.emit('game_stopFinding');
+	Document_state1();
+}
+
+//Клик по кнопке "Покинуть игру"
+function LeaveButton_click(){
+	socket.emit('room_leave');
+	Document_state1();
+}
+//Клик по кнопке "Войти" (вход в комнату для просмотра игры)
+function RoomEnterButton_click(){
+	Document_state3();
+	$('div.board > div.square').off('click');
+	socket.emit('room_enter', this.attributes['data-roomID'].value);
+}
+
+function RoomsListUnsubscribeButton_click(){
+	socket.emit('roomsList_unsubscribe');
+	Document_state1();
 }
 
 //Выполнится при загрузке страницы
