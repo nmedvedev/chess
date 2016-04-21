@@ -7,6 +7,7 @@ var SelectedFigure = undefined;
 var HistoryMoves = [];
 var generator;
 var tmpFigure = undefined;//для превращения пешки
+var Observer = false;//флаг, показывающий, является ли клиент наблюдателем
 
 
 
@@ -38,27 +39,31 @@ function MoveFromServer_Move(data){
 		ChangeMove();
 		RefreshBoard();
 		
-		//Мат
-		if(CheckMate(NowMove,Matrix)){
-			socket.emit('turn_mate');
-			return;
-		}
-		//Шах
-		if(CheckToTheKing(NowMove,Matrix)){
-			var str=(NowMove === 'white' ? 'Белым' : 'Чёрным');
-			str+=' объявлен шах.';
-			alert(str);	
-		}
-		//Пат
-		if(CheckStalemate(NowMove,Matrix)){
-			socket.emit('turn_draw');
-			return;
+		if(!Observer){
+			//Мат
+			if(CheckMate(NowMove,Matrix)){
+				socket.emit('turn_mate');
+				return;
+			}
+			//Шах
+			if(CheckToTheKing(NowMove,Matrix)){
+				var str=(NowMove === 'white' ? 'Белым' : 'Чёрным');
+				str+=' объявлен шах.';
+				alert(str);	
+			}
+			//Пат
+			if(CheckStalemate(NowMove,Matrix)){
+				socket.emit('turn_draw');
+				return;
+			}
 		}
 		
 		SelectedFigure=undefined;	
 	}
 	else{
-		socket.emit('turnValidation_invalid');
+		if(!Observer){
+			socket.emit('turnValidation_invalid');
+		}
 	}
 }
 
@@ -87,28 +92,31 @@ function MoveFromServer_Castling(data){
 		
 		ChangeMove();
 		RefreshBoard();
-		
-		//Мат
-		if(CheckMate(NowMove,Matrix)){
-			socket.emit('turn_mate');
-			return;
-		}
-		//Шах
-		if(CheckToTheKing(NowMove,Matrix)){
-			var str=(NowMove === 'white' ? 'Белым' : 'Чёрным');
-			str+=' объявлен шах.';
-			alert(str);	
-		}
-		//Пат
-		if(CheckStalemate(NowMove,Matrix)){
-			socket.emit('turn_draw');
-			return;
+		if(!Observer){
+			//Мат
+			if(CheckMate(NowMove,Matrix)){
+				socket.emit('turn_mate');
+				return;
+			}
+			//Шах
+			if(CheckToTheKing(NowMove,Matrix)){
+				var str=(NowMove === 'white' ? 'Белым' : 'Чёрным');
+				str+=' объявлен шах.';
+				alert(str);	
+			}
+			//Пат
+			if(CheckStalemate(NowMove,Matrix)){
+				socket.emit('turn_draw');
+				return;
+			}
 		}
 		
 		SelectedFigure=undefined;	
 	}
 	else{
-		socket.emit('turnValidation_invalid');
+		if(!Observer){
+			socket.emit('turnValidation_invalid');
+		}
 	}
 }
 
@@ -134,32 +142,36 @@ function MoveFromServer_Promotion(data){
 		
 		ChangeMove();
 		RefreshBoard();
-		
-		//Мат
-		if(CheckMate(NowMove,Matrix)){
-			socket.emit('turn_mate');
-			return;
-		}
-		//Шах
-		if(CheckToTheKing(NowMove,Matrix)){
-			var str=(NowMove === 'white' ? 'Белым' : 'Чёрным');
-			str+=' объявлен шах.';
-			alert(str);	
-		}
-		//Пат
-		if(CheckStalemate(NowMove,Matrix)){
-			socket.emit('turn_draw');
-			return;
+		if(!Observer){
+			//Мат
+			if(CheckMate(NowMove,Matrix)){
+				socket.emit('turn_mate');
+				return;
+			}
+			//Шах
+			if(CheckToTheKing(NowMove,Matrix)){
+				var str=(NowMove === 'white' ? 'Белым' : 'Чёрным');
+				str+=' объявлен шах.';
+				alert(str);	
+			}
+			//Пат
+			if(CheckStalemate(NowMove,Matrix)){
+				socket.emit('turn_draw');
+				return;
+			}
 		}
 		
 		SelectedFigure=undefined;	
 	}
 	else{
-		socket.emit('turnValidation_invalid');
+		if(!Observer){
+			socket.emit('turnValidation_invalid');
+		}
 	}
 }
 
 socket.on('game_found', function(data) {
+	Observer=false;
 	alert('Игра найдена! Ваш цвет: '+(data.color === 'white' ? 'белый.' : 'чёрный.'));
 	MyColor=data.color;
 	Document_state3();
@@ -168,19 +180,23 @@ socket.on('player_move', MoveFromServer_Move);
 socket.on('player_castling', MoveFromServer_Castling);
 socket.on('player_promotion', MoveFromServer_Promotion);
 socket.on('player_mate', function() {
-	if(CheckMate(NowMove,Matrix)){
-		socket.emit('turnValidation_mate');
-	}
-	else{
-		socket.emit('turnValidation_invalid');
+	if(!Observer){
+		if(CheckMate(NowMove,Matrix)){
+			socket.emit('turnValidation_mate');
+		}
+		else{
+			socket.emit('turnValidation_invalid');
+		}
 	}
 });
 socket.on('player_draw', function() {
-	if(CheckStalemate(NowMove,Matrix)){
-		socket.emit('turnValidation_draw');
-	}
-	else{
-		socket.emit('turnValidation_invalid');
+	if(!Observer){
+		if(CheckStalemate(NowMove,Matrix)){
+			socket.emit('turnValidation_draw');
+		}
+		else{
+			socket.emit('turnValidation_invalid');
+		}
 	}
 });
 socket.on('game_end', function(data) {
@@ -211,6 +227,7 @@ socket.on('game_end', function(data) {
 	$('div.board > div.square').off('click');
 });
 socket.on('roomsList', function(rooms) {
+	Observer=true;
 	$('body').empty();
 	$('body').html('<table id="RoomsTable" width="450" border="1" cellspacing="0" cellpadding="5">'+
 	'<tr><th scope="col">ID комнаты</th><th scope="col">Кол-во людей</th><th scope="col">&nbsp;</th></tr></table>'+
@@ -230,6 +247,7 @@ socket.on('roomsList', function(rooms) {
 	$('div.RoomsListUnsubscribeButton').click(RoomsListUnsubscribeButton_click);
 });
 socket.on('game_logs', function(data) {
+	Observer=true;
 	for(var i=0; i<data.length; i++){
 		if(data[i].moveType == 'move'){
 			MoveFromServer_Move(data[i].moveData);
